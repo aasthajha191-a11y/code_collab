@@ -24,6 +24,7 @@ import {
 import {
   listVersions,
   getVersion,
+  compareVersions,
   createSnapshot,
   restoreVersion,
   createSnapshotSchema,
@@ -57,6 +58,7 @@ router.post('/:roomId/execute', validate(executeCodeSchema), asyncHandler(execut
 // ── Snapshots & version history ────────────────────────
 router.post('/:roomId/snapshots',                   validate(createSnapshotSchema), asyncHandler(createSnapshot))
 router.get('/:roomId/versions',                     asyncHandler(listVersions))
+router.get('/:roomId/versions/compare',             asyncHandler(compareVersions))
 router.get('/:roomId/versions/:versionId',          asyncHandler(getVersion))
 router.post('/:roomId/versions/:versionId/restore', asyncHandler(restoreVersion))
 

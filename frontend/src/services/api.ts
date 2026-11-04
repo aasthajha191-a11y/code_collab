@@ -149,6 +149,12 @@ export const versionsApi = {
     const res = await api.post(`/api/rooms/${roomId}/snapshots`, { code, language })
     return res.data
   },
+
+  /** Compare two versions */
+  compare: async (roomId: string, fromId: string, toId: string) => {
+    const res = await api.get(`/api/rooms/${roomId}/versions/compare?fromId=${fromId}&toId=${toId}`)
+    return res.data
+  },
 }
 
 export default api
