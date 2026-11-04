@@ -15,12 +15,7 @@
     "noUnusedParameters": false,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
-    /* Path aliases */
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "sourceMap": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "prisma"]
