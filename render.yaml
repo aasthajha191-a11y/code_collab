@@ -2,7 +2,7 @@ services:
   # ── Backend Web Service ────────────────────────────────────
   - type: web
     name: codecollab-api
-    env: node
+    runtime: node
     plan: free
     rootDir: backend
     buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
@@ -29,12 +29,13 @@ services:
         value: https://ce.judge0.com
 
   # ── Frontend Static Site ───────────────────────────────────
-  - type: static
+  - type: web
     name: codecollab-app
+    runtime: static
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    staticPublishPath: ./dist
     routes:
       - type: rewrite
         source: /*
