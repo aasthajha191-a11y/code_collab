@@ -1,0 +1,107 @@
+// Prisma Schema — defines the database structure.
+// Run `npm run db:generate` to generate the Prisma client after changes.
+// Run `npm run db:migrate` to apply migrations to the database.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// USER
+// Stores everyone who has logged in via GitHub OAuth.
+// ─────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  githubId  String   @unique  // GitHub's numeric user ID (stored as string)
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  ownedRooms    Room[]        @relation("RoomOwner")
+  memberships   RoomMember[]
+  snapshots     CodeSnapshot[]
+
+  @@index([githubId])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// ROOM
+// A collaborative coding session.
+// ─────────────────────────────────────────────
+model Room {
+  id        String   @id @default(cuid())
+  name      String
+  language  String   @default("javascript") // python | javascript | java
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The user who created this room
+  ownerId   String
+  owner     User     @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // The current code content stored in DB for persistence.
+  // Yjs document state is the authoritative real-time source;
+  // this field is updated when snapshots are taken.
+  currentCode String  @default("")
+
+  // Relations
+  members   RoomMember[]
+  snapshots CodeSnapshot[]
+
+  @@index([ownerId])
+  @@map("rooms")
+}
+
+// ─────────────────────────────────────────────
+// ROOM MEMBER
+// Junction table: which users belong to which room.
+// ─────────────────────────────────────────────
+model RoomMember {
+  id       String   @id @default(cuid())
+  joinedAt DateTime @default(now())
+  role     String   @default("member") // "owner" | "member"
+
+  roomId  String
+  room    Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])  // A user can only join a room once
+  @@index([roomId])
+  @@index([userId])
+  @@map("room_members")
+}
+
+// ─────────────────────────────────────────────
+// CODE SNAPSHOT
+// A saved version of the code at a point in time.
+// Saved automatically every 30 seconds or manually.
+// ─────────────────────────────────────────────
+model CodeSnapshot {
+  id            String   @id @default(cuid())
+  code          String   // The actual code content
+  language      String   // python | javascript | java
+  versionNumber Int      // Incrementing version: 1, 2, 3 ...
+  createdAt     DateTime @default(now())
+
+  roomId  String
+  room    Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  // Who triggered this snapshot (null = auto-save)
+  createdById  String?
+  createdBy    User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([roomId])
+  @@index([roomId, versionNumber])
+  @@map("code_snapshots")
+}
