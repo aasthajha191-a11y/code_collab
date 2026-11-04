@@ -30,11 +30,17 @@ export function useRoom(roomId: string | undefined) {
     try {
       setIsLoading(true)
       setError(null)
+      // Attempt to auto-join the room if accessed via shareable link
+      try {
+        await roomsApi.join(roomId)
+      } catch {
+        // If join fails (e.g. already joined), continue to fetch room details
+      }
       const data = await roomsApi.get(roomId)
       setRoom(data)
     } catch (err: unknown) {
       const e = err as { response?: { status?: number; data?: { error?: string } } }
-      if (e.response?.status === 403) setError('You are not a member of this room.')
+      if (e.response?.status === 403) setError('You are not authorized to view this room.')
       else if (e.response?.status === 404) setError('Room not found.')
       else setError('Failed to load room.')
     } finally {

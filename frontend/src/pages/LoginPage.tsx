@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Code2, Shield, Zap, Users, LogIn, UserPlus, Sparkles } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Spinner } from '@/components/Spinner'
@@ -8,6 +8,8 @@ import toast from 'react-hot-toast'
 export default function LoginPage() {
   const { isAuthenticated, isLoading, login, register, guestLogin } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirectTarget = searchParams.get('redirect') || '/dashboard'
 
   // Form mode: 'login' | 'register'
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -18,9 +20,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTarget, { replace: true })
     }
-  }, [isAuthenticated, isLoading, navigate])
+  }, [isAuthenticated, isLoading, navigate, redirectTarget])
 
   if (isLoading) {
     return (
@@ -46,7 +48,7 @@ export default function LoginPage() {
         await login({ email: email.trim(), password })
         toast.success('Welcome back!')
       }
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTarget, { replace: true })
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
@@ -62,7 +64,7 @@ export default function LoginPage() {
     try {
       await guestLogin()
       toast.success('Logged in as Demo Developer!')
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTarget, { replace: true })
     } catch {
       toast.error('Demo login failed')
     } finally {

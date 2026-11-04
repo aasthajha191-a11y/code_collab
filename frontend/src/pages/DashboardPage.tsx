@@ -13,6 +13,7 @@ import { Spinner } from '@/components/Spinner'
 import { LanguageSelector, LanguageBadge, Language } from '@/components/LanguageSelector'
 import { Avatar } from '@/components/Avatar'
 import { useRooms, Room } from '@/hooks/useRooms'
+import { getRoomShareUrl } from '@/utils/shareUrl'
 
 export default function DashboardPage() {
   const { user } = useAuth()
@@ -279,7 +280,7 @@ function RoomCard({
 
   function copyLink(e: React.MouseEvent) {
     e.stopPropagation()
-    const link = `${window.location.origin}/room/${room.id}`
+    const link = getRoomShareUrl(room.id)
     navigator.clipboard.writeText(link)
     setCopied(true)
     toast.success('Invite link copied!')

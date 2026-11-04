@@ -1,20 +1,15 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
 /**
  * ProtectedRoute — wraps routes that require authentication.
  *
- * If the user is not logged in, they are redirected to /login.
- * While we're still checking the session (isLoading), show a spinner
- * so we don't flash a redirect before auth is confirmed.
- *
- * Used in App.tsx like:
- *   <Route element={<ProtectedRoute />}>
- *     <Route path="/dashboard" element={<DashboardPage />} />
- *   </Route>
+ * If the user is not logged in, they are redirected to /login with a redirect query param
+ * so they are seamlessly routed back to the shared room after logging in.
  */
 export function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth()
+  const location = useLocation()
 
   // Still checking session — show a full-screen loader
   if (isLoading) {
@@ -28,9 +23,10 @@ export function ProtectedRoute() {
     )
   }
 
-  // Not authenticated — redirect to login
+  // Not authenticated — redirect to login preserving redirect target
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    const returnUrl = encodeURIComponent(location.pathname + location.search)
+    return <Navigate to={`/login?redirect=${returnUrl}`} replace />
   }
 
   // Authenticated — render the child route

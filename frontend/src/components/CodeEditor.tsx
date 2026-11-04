@@ -129,9 +129,17 @@ export function CodeEditor({
       onCodeChange(yText.toString())
     })
 
-    // Connect to Socket.IO backend
-    const socket = io('/', {
+    // Connect to Socket.IO backend (supports VITE_SOCKET_URL or VITE_API_URL for public cross-network deployments)
+    const socketServerUrl =
+      import.meta.env.VITE_SOCKET_URL ||
+      import.meta.env.VITE_API_URL ||
+      '/'
+
+    const authToken = localStorage.getItem('auth_token') || undefined
+
+    const socket = io(socketServerUrl, {
       withCredentials: true,
+      auth: { token: authToken },
       transports: ['websocket', 'polling'],
     })
     socketRef.current = socket

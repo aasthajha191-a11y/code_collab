@@ -106,16 +106,25 @@ export function generateToken(userId: string): string {
 
 /** Helper: set the JWT as an HttpOnly cookie on the response */
 export function setAuthCookie(res: Response, token: string): void {
+  // If in production or cross-site HTTPS (e.g. Render frontend on onrender.com talking to backend on onrender.com),
+  // sameSite: 'none' is required with secure: true
+  const isSecure = env.COOKIE_SECURE || env.IS_PROD
+
   res.cookie('token', token, {
     httpOnly: true,        // not accessible by JavaScript
-    secure: env.COOKIE_SECURE,  // true in production (HTTPS only)
-    sameSite: 'lax',       // CSRF protection
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+    secure: isSecure,      // true in production / HTTPS
+    sameSite: isSecure ? 'none' : 'lax', // cross-site cookie support across separate Render domains
+    maxAge: 7 * 24 * 60 * 60 * 1000,    // 7 days in ms
     path: '/',
   })
 }
 
 /** Helper: clear the auth cookie (used on logout) */
 export function clearAuthCookie(res: Response): void {
-  res.clearCookie('token', { path: '/' })
+  const isSecure = env.COOKIE_SECURE || env.IS_PROD
+  res.clearCookie('token', {
+    path: '/',
+    secure: isSecure,
+    sameSite: isSecure ? 'none' : 'lax',
+  })
 }

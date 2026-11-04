@@ -31,8 +31,9 @@ interface Judge0Result {
 
 /**
  * POST /api/rooms/:roomId/execute
- * Submits code to Judge0 for sandboxed execution.
- * When Judge0 API key is not configured, provides realistic sandboxed simulation.
+ * Submits code to Judge0 for real sandboxed execution.
+ * When Judge0 credentials are required but missing or execution fails,
+ * returns a descriptive error rather than silent mock execution.
  */
 export async function executeCode(req: Request, res: Response): Promise<void> {
   const { roomId } = req.params
@@ -45,30 +46,41 @@ export async function executeCode(req: Request, res: Response): Promise<void> {
   })
   if (!membership) throw createError('You are not a member of this room', 403)
 
-  // Fallback to high-fidelity sandboxed mock when no Judge0 key is configured
-  if (!env.JUDGE0_API_KEY) {
-    const mockResult = simulateExecution(language, code)
-    res.json(mockResult)
-    return
+  // Determine if using RapidAPI host or self-hosted / direct Judge0 URL
+  const isRapidApi = Boolean(
+    env.JUDGE0_API_HOST ||
+    env.JUDGE0_API_URL.includes('rapidapi.com')
+  )
+
+  // Validate credentials when using a provider that requires an API key
+  if (isRapidApi && !env.JUDGE0_API_KEY) {
+    throw createError(
+      'Judge0 API key is not configured on the server. Please set JUDGE0_API_KEY and JUDGE0_API_HOST in backend environment variables.',
+      503
+    )
   }
 
   const languageId = JUDGE0_LANGUAGE_IDS[language]
+  if (!languageId) {
+    throw createError(`Language '${language}' is not supported for execution`, 400)
+  }
 
-  // Submit to Judge0 (supports both RapidAPI and direct Judge0 instances)
-  let submissionToken: string
+  // Submit to Judge0
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (isRapidApi) {
+    headers['X-RapidAPI-Host'] = env.JUDGE0_API_HOST || 'judge0-ce.p.rapidapi.com'
+    headers['X-RapidAPI-Key'] = env.JUDGE0_API_KEY
+  } else if (env.JUDGE0_API_KEY) {
+    headers['X-Auth-Token'] = env.JUDGE0_API_KEY
+  }
+
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    if (env.JUDGE0_API_HOST) {
-      headers['X-RapidAPI-Host'] = env.JUDGE0_API_HOST
-      headers['X-RapidAPI-Key'] = env.JUDGE0_API_KEY
-    } else {
-      headers['X-Auth-Token'] = env.JUDGE0_API_KEY
-    }
-
-    const submitRes = await axios.post<Judge0Submission>(
-      `${env.JUDGE0_API_URL}/submissions?base64_encoded=false&wait=false`,
+    // Attempt wait=true first for fast execution (< 2 seconds)
+    const fastUrl = `${env.JUDGE0_API_URL}/submissions?base64_encoded=false&wait=true`
+    const fastRes = await axios.post<Judge0Result & { token?: string }>(
+      fastUrl,
       {
         language_id: languageId,
         source_code: code,
@@ -80,28 +92,42 @@ export async function executeCode(req: Request, res: Response): Promise<void> {
         timeout: 10000,
       }
     )
-    submissionToken = submitRes.data.token
-  } catch (err) {
-    console.error('[Judge0] Submission error:', err)
-    // If Judge0 is unreachable, fall back to mock simulation gracefully
-    const mockResult = simulateExecution(language, code, true)
-    res.json(mockResult)
-    return
-  }
 
-  const result = await pollJudge0(submissionToken)
-  res.json({ mock: false, ...result })
+    if (fastRes.data.status && fastRes.data.status.id >= 3) {
+      res.json({
+        mock: false,
+        stdout: fastRes.data.stdout,
+        stderr: fastRes.data.stderr,
+        compile_output: fastRes.data.compile_output,
+        message: fastRes.data.message,
+        status: fastRes.data.status,
+        time: fastRes.data.time,
+        memory: fastRes.data.memory,
+      })
+      return
+    }
+
+    // If wait=true returned queued/processing token or token only, poll for it
+    const token = fastRes.data.token
+    if (token) {
+      const polledResult = await pollJudge0(token, headers)
+      res.json({ mock: false, ...polledResult })
+      return
+    }
+
+    throw createError('Failed to obtain submission status from Judge0', 502)
+  } catch (err: unknown) {
+    console.error('[Judge0] Execution request error:', err)
+    const axiosError = err as { response?: { status?: number; data?: { message?: string; error?: string } } }
+    if (axiosError.response?.data?.message || axiosError.response?.data?.error) {
+      const msg = axiosError.response.data.message || axiosError.response.data.error
+      throw createError(`Judge0 API error: ${msg}`, axiosError.response.status || 502)
+    }
+    throw createError('Failed to execute code on Judge0. Please check server logs and configuration.', 502)
+  }
 }
 
-async function pollJudge0(token: string, attempts = 10): Promise<Judge0Result> {
-  const headers: Record<string, string> = {}
-  if (env.JUDGE0_API_HOST) {
-    headers['X-RapidAPI-Host'] = env.JUDGE0_API_HOST
-    headers['X-RapidAPI-Key'] = env.JUDGE0_API_KEY
-  } else if (env.JUDGE0_API_KEY) {
-    headers['X-Auth-Token'] = env.JUDGE0_API_KEY
-  }
-
+async function pollJudge0(token: string, headers: Record<string, string>, attempts = 15): Promise<Judge0Result> {
   for (let i = 0; i < attempts; i++) {
     await new Promise((r) => setTimeout(r, 1000))
     const res = await axios.get<Judge0Result>(
@@ -111,122 +137,9 @@ async function pollJudge0(token: string, attempts = 10): Promise<Judge0Result> {
         timeout: 5000,
       }
     )
-    if (res.data.status.id >= 3) return res.data
-  }
-  throw createError('Code execution timed out', 408)
-}
-
-/**
- * High-fidelity simulator for Python, JavaScript, and Java
- * Used when Judge0 credentials are not yet supplied by the user.
- */
-function simulateExecution(
-  language: string,
-  code: string,
-  serviceUnavailable = false
-) {
-  const startTime = Date.now()
-  const trimmed = code.trim()
-
-  // 1. Detect Compilation / Syntax Errors
-  if (
-    trimmed.includes('syntax_error') ||
-    trimmed.includes('SyntaxError') ||
-    (language === 'java' && !trimmed.includes('class')) ||
-    (trimmed.match(/\{/g)?.length ?? 0) !== (trimmed.match(/\}/g)?.length ?? 0) ||
-    (trimmed.match(/\(/g)?.length ?? 0) !== (trimmed.match(/\)/g)?.length ?? 0)
-  ) {
-    return {
-      mock: true,
-      message: serviceUnavailable
-        ? '⚠️ Judge0 endpoint unavailable. Running in simulated fallback mode.'
-        : '⚠️ MOCK MODE: Set JUDGE0_API_KEY in .env for external sandboxed execution.',
-      stdout: null,
-      stderr: null,
-      compile_output:
-        language === 'java'
-          ? `Main.java: error: reached end of file while parsing or missing class declaration\n1 error`
-          : `SyntaxError: unexpected token or unclosed bracket in ${language} code\n  at line 1`,
-      status: { id: 6, description: 'Compilation Error' },
-      time: '0.012',
-      memory: 12040,
+    if (res.data.status && res.data.status.id >= 3) {
+      return res.data
     }
   }
-
-  // 2. Detect Runtime Errors
-  if (
-    trimmed.includes('1 / 0') ||
-    trimmed.includes('1/0') ||
-    trimmed.includes('ZeroDivisionError') ||
-    trimmed.includes('throw new Error') ||
-    trimmed.includes('NullPointerException')
-  ) {
-    return {
-      mock: true,
-      message: '⚠️ MOCK MODE: Simulated runtime error',
-      stdout: null,
-      stderr:
-        language === 'python'
-          ? 'ZeroDivisionError: division by zero\n  at line 2 in <module>'
-          : language === 'java'
-          ? 'Exception in thread "main" java.lang.ArithmeticException: / by zero\n\tat Main.main(Main.java:4)'
-          : 'Error: Execution error simulated\n    at main.js:3:9',
-      compile_output: null,
-      status: { id: 11, description: 'Runtime Error (NZEC)' },
-      time: '0.018',
-      memory: 15420,
-    }
-  }
-
-  // 3. Detect Simulated Timeout
-  if (trimmed.includes('while True:') || trimmed.includes('while(true)') || trimmed.includes('while (true)')) {
-    return {
-      mock: true,
-      message: '⚠️ MOCK MODE: Execution timed out after 5.0 seconds',
-      stdout: null,
-      stderr: 'Time limit exceeded (5.00s CPU)',
-      compile_output: null,
-      status: { id: 5, description: 'Time Limit Exceeded' },
-      time: '5.000',
-      memory: 24500,
-    }
-  }
-
-  // 4. Extract printed outputs or simulate standard output
-  const lines = code.split('\n')
-  const prints: string[] = []
-
-  for (const line of lines) {
-    // Python print(...)
-    const pyMatch = line.match(/print\((['"])(.*?)\1\)/)
-    if (pyMatch) prints.push(pyMatch[2])
-
-    // JS console.log(...)
-    const jsMatch = line.match(/console\.log\((['"`])(.*?)\1\)/)
-    if (jsMatch) prints.push(jsMatch[2])
-
-    // Java System.out.println(...)
-    const javaMatch = line.match(/System\.out\.println\((['"])(.*?)\1\)/)
-    if (javaMatch) prints.push(javaMatch[2])
-  }
-
-  const simulatedOutput =
-    prints.length > 0
-      ? prints.join('\n')
-      : `Hello from ${language}!\nProgram executed successfully (${lines.length} lines parsed).`
-
-  const elapsed = ((Date.now() - startTime + 15) / 1000).toFixed(3)
-
-  return {
-    mock: true,
-    message: serviceUnavailable
-      ? '⚠️ Judge0 remote endpoint unavailable. Simulated output produced safely.'
-      : '⚠️ MOCK MODE: Judge0 API key not configured. Set JUDGE0_API_KEY in .env to enable real execution.',
-    stdout: simulatedOutput,
-    stderr: null,
-    compile_output: null,
-    status: { id: 3, description: 'Accepted' },
-    time: elapsed,
-    memory: 18240,
-  }
+  throw createError('Code execution timed out waiting for Judge0 results', 408)
 }

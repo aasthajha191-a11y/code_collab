@@ -15,6 +15,7 @@ import { LanguageSelector, Language } from '@/components/LanguageSelector'
 import { Modal } from '@/components/Modal'
 import { CodeEditor, OnlineCollaborator } from '@/components/CodeEditor'
 import { codeApi, versionsApi } from '@/services/api'
+import { getRoomShareUrl } from '@/utils/shareUrl'
 
 // ── Types ──────────────────────────────────────────────────
 interface ExecutionResult {
@@ -77,8 +78,11 @@ export default function EditorPage() {
 
   // ── Copy invite link ───────────────────────────────────
   const [copied, setCopied] = useState(false)
+  const shareUrl = roomId ? getRoomShareUrl(roomId) : ''
+
   function copyLink() {
-    navigator.clipboard.writeText(`${window.location.origin}/room/${roomId}`)
+    if (!shareUrl) return
+    navigator.clipboard.writeText(shareUrl)
     setCopied(true)
     toast.success('Invite link copied!')
     setTimeout(() => setCopied(false), 2000)
@@ -470,7 +474,7 @@ export default function EditorPage() {
           <div className="flex items-center gap-2">
             <input
               readOnly
-              value={`${window.location.origin}/room/${roomId}`}
+              value={shareUrl}
               className="input text-xs font-mono flex-1"
             />
             <button onClick={copyLink} className="btn-primary px-3 shrink-0">

@@ -150,15 +150,15 @@ async function bootstrap(): Promise<void> {
     }
   }, env.SNAPSHOT_INTERVAL_MS)
 
-  // ── Start listening ────────────────────────────────────
-  httpServer.listen(env.PORT, () => {
+  // ── Start listening on 0.0.0.0 for public cloud hosting ─────
+  httpServer.listen(env.PORT, '0.0.0.0', () => {
     console.log('')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('  CodeCollab Backend  ✓  Running')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log(`  URL:         http://localhost:${env.PORT}`)
+    console.log(`  Host:        0.0.0.0:${env.PORT}`)
     console.log(`  Environment: ${env.NODE_ENV}`)
-    console.log(`  Health:      http://localhost:${env.PORT}/health`)
+    console.log(`  Health:      /health`)
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('')
   })

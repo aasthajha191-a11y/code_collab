@@ -69,18 +69,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Log in with email/password
   const login = useCallback(async (data: { email: string; password: string }) => {
     const res = await authApi.login(data)
+    if (res.token) {
+      localStorage.setItem('auth_token', res.token)
+    }
     setUser(res.user)
   }, [])
 
   // Register with email/password
   const register = useCallback(async (data: { name: string; email: string; password: string }) => {
     const res = await authApi.register(data)
+    if (res.token) {
+      localStorage.setItem('auth_token', res.token)
+    }
     setUser(res.user)
   }, [])
 
   // Quick guest login
   const guestLogin = useCallback(async () => {
     const res = await authApi.guestLogin()
+    if (res.token) {
+      localStorage.setItem('auth_token', res.token)
+    }
     setUser(res.user)
   }, [])
 
@@ -89,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout()
     } finally {
+      localStorage.removeItem('auth_token')
       setUser(null)
     }
   }, [])

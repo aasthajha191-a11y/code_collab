@@ -4,15 +4,26 @@ import axios from 'axios'
  * api.ts — Centralised HTTP client
  *
  * All API calls go through this axios instance.
- * Base URL is empty — Vite's proxy forwards /api/* to http://localhost:4000
- * (see vite.config.ts). In production, Nginx handles the same proxying.
+ * Reads VITE_API_URL if configured for public hosting (e.g. on Render),
+ * falling back to empty string for local development with Vite proxy or Nginx.
  */
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
 const api = axios.create({
-  baseURL: '',
+  baseURL: API_BASE_URL,
   withCredentials: true, // send/receive cookies (JWT stored in HttpOnly cookie)
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+// Attach Bearer token from localStorage if available (supports both cookie & header auth)
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token')
+  if (token && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
 })
 
 // -------------------------------------------------------
@@ -22,10 +33,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token')
       // If any request gets a 401, the session has expired.
-      // Redirect to login page (without importing react-router here).
+      // Redirect to login page preserving the current room path if applicable.
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
+        const currentPath = window.location.pathname + window.location.search
+        window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
       }
     }
     return Promise.reject(error)

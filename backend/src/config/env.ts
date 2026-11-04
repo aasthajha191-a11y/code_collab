@@ -63,18 +63,24 @@ export const env = {
   GITHUB_CALLBACK_URL:  optional('GITHUB_CALLBACK_URL', 'http://localhost:4000/auth/github/callback'),
 
   // Judge0
-  JUDGE0_API_URL:  optional('JUDGE0_API_URL', 'https://judge0-ce.p.rapidapi.com'),
+  JUDGE0_API_URL:  optional('JUDGE0_API_URL', 'https://ce.judge0.com'),
   JUDGE0_API_KEY:  optional('JUDGE0_API_KEY', ''),
-  JUDGE0_API_HOST: optional('JUDGE0_API_HOST', 'judge0-ce.p.rapidapi.com'),
+  JUDGE0_API_HOST: optional('JUDGE0_API_HOST', ''),
 
   // Cookie
   COOKIE_SECRET: requireEnv('COOKIE_SECRET', 'dev-cookie-secret-change-in-production'),
   COOKIE_SECURE: process.env.COOKIE_SECURE === 'true',
 
-  // CORS
-  ALLOWED_ORIGINS: optional('ALLOWED_ORIGINS', 'http://localhost:5173')
-    .split(',')
-    .map((o) => o.trim()),
+  // CORS — combine ALLOWED_ORIGINS and FRONTEND_URL
+  ALLOWED_ORIGINS: Array.from(
+    new Set([
+      ...optional('ALLOWED_ORIGINS', 'http://localhost:5173')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+      ...(optional('FRONTEND_URL') ? [optional('FRONTEND_URL').trim()] : []),
+    ])
+  ),
 
   // Snapshot interval in ms (default 30 seconds)
   SNAPSHOT_INTERVAL_MS: parseInt(optional('SNAPSHOT_INTERVAL_MS', '30000'), 10),
