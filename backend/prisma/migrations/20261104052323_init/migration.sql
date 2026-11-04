@@ -3,7 +3,8 @@ CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "email" TEXT,
-    "githubId" TEXT NOT NULL,
+    "password" TEXT,
+    "githubId" TEXT,
     "avatarUrl" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -56,6 +57,9 @@ CREATE UNIQUE INDEX "users_githubId_key" ON "users"("githubId");
 
 -- CreateIndex
 CREATE INDEX "users_githubId_idx" ON "users"("githubId");
+
+-- CreateIndex
+CREATE INDEX "users_email_idx" ON "users"("email");
 
 -- CreateIndex
 CREATE INDEX "rooms_ownerId_idx" ON "rooms"("ownerId");
