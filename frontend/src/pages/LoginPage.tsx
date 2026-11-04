@@ -1,12 +1,20 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Code2, GitBranch, Shield, Zap, Users } from 'lucide-react'
+import { Code2, Shield, Zap, Users, LogIn, UserPlus, Sparkles } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Spinner } from '@/components/Spinner'
+import toast from 'react-hot-toast'
 
 export default function LoginPage() {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, login, register, guestLogin } = useAuth()
   const navigate = useNavigate()
+
+  // Form mode: 'login' | 'register'
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -14,15 +22,56 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, isLoading, navigate])
 
-  if (isLoading) return (
-    <div className="flex h-screen items-center justify-center bg-editor-bg">
-      <Spinner size="lg" />
-    </div>
-  )
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-editor-bg">
+        <Spinner size="lg" />
+      </div>
+    )
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      if (mode === 'register') {
+        if (!name.trim()) {
+          toast.error('Please enter your name')
+          setSubmitting(false)
+          return
+        }
+        await register({ name: name.trim(), email: email.trim(), password })
+        toast.success('Account created successfully!')
+      } else {
+        await login({ email: email.trim(), password })
+        toast.success('Welcome back!')
+      }
+      navigate('/dashboard', { replace: true })
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (mode === 'register' ? 'Registration failed' : 'Invalid email or password')
+      toast.error(msg)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleGuestDemo() {
+    setSubmitting(true)
+    try {
+      await guestLogin()
+      toast.success('Logged in as Demo Developer!')
+      navigate('/dashboard', { replace: true })
+    } catch {
+      toast.error('Demo login failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-editor-bg flex">
-
       {/* ── Left panel — branding ──────────────────────────── */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 bg-editor-sidebar border-r border-editor-border">
         {/* Logo */}
@@ -49,7 +98,7 @@ export default function LoginPage() {
             {[
               { icon: Zap,    text: 'Conflict-free editing powered by Yjs CRDT' },
               { icon: Users,  text: 'Live cursors and real-time presence' },
-              { icon: Shield, text: 'Secure GitHub OAuth — no passwords' },
+              { icon: Shield, text: 'JWT authentication with secure password hashing' },
             ].map((item) => (
               <li key={item.text} className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-brand/10 flex items-center justify-center shrink-0">
@@ -67,33 +116,147 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* ── Right panel — login form ───────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
-
+      {/* ── Right panel — login / signup form ──────────────── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 overflow-y-auto">
         {/* Mobile logo */}
-        <Link to="/" className="flex items-center gap-2 mb-10 lg:hidden">
+        <Link to="/" className="flex items-center gap-2 mb-8 lg:hidden">
           <Code2 className="h-7 w-7 text-brand" />
           <span className="text-xl font-bold text-white">CodeCollab</span>
         </Link>
 
         <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-white">Welcome back</h2>
-            <p className="text-gray-400 text-sm mt-2">
-              Sign in to start coding together
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-white">
+              {mode === 'register' ? 'Create an account' : 'Welcome back'}
+            </h2>
+            <p className="text-gray-400 text-sm mt-1">
+              {mode === 'register'
+                ? 'Sign up to start collaborating on code'
+                : 'Sign in to access your rooms'}
             </p>
+          </div>
+
+          {/* Quick Demo Access Button */}
+          <button
+            type="button"
+            onClick={handleGuestDemo}
+            disabled={submitting}
+            className="flex items-center justify-center gap-2 w-full px-4 py-2.5 mb-5
+                       bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40
+                       rounded-lg text-emerald-300 text-sm font-medium transition-colors"
+          >
+            <Sparkles className="h-4 w-4 text-emerald-400" />
+            Quick Demo Login (1-Click Guest)
+          </button>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-300 mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Alice Developer"
+                  className="input text-sm"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="alice@example.com"
+                className="input text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                Password
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="input text-sm"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary w-full justify-center py-2.5 mt-2 text-sm"
+            >
+              {submitting ? (
+                <Spinner size="sm" />
+              ) : mode === 'register' ? (
+                <>
+                  <UserPlus className="h-4 w-4" /> Create Account
+                </>
+              ) : (
+                <>
+                  <LogIn className="h-4 w-4" /> Sign In
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Mode Switcher */}
+          <div className="text-center mt-4 text-sm text-gray-400">
+            {mode === 'register' ? (
+              <>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => setMode('login')}
+                  className="text-brand hover:underline font-medium"
+                >
+                  Sign In
+                </button>
+              </>
+            ) : (
+              <>
+                Don&apos;t have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => setMode('register')}
+                  className="text-brand hover:underline font-medium"
+                >
+                  Create one
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-editor-border" />
+            <span className="text-xs text-gray-600">or continue with</span>
+            <div className="flex-1 h-px bg-editor-border" />
           </div>
 
           {/* GitHub OAuth button */}
           <a
             href="/auth/github"
-            className="flex items-center justify-center gap-3 w-full px-5 py-3.5
+            className="flex items-center justify-center gap-3 w-full px-4 py-2.5
                        bg-[#24292f] hover:bg-[#2f3439] border border-[#444c56]
-                       rounded-lg text-white font-medium transition-colors duration-150
-                       shadow-lg shadow-black/20 group"
+                       rounded-lg text-white text-sm font-medium transition-colors"
           >
-            {/* GitHub SVG icon */}
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57
                        0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41
                        -1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815
@@ -104,33 +267,11 @@ export default function LoginPage() {
                        .435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57
                        A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
             </svg>
-            Continue with GitHub
-            <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-gray-400">→</span>
+            GitHub
           </a>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-editor-border" />
-            <span className="text-xs text-gray-600">Authentication via GitHub OAuth 2.0</span>
-            <div className="flex-1 h-px bg-editor-border" />
-          </div>
-
-          {/* Info box */}
-          <div className="rounded-lg bg-editor-sidebar border border-editor-border p-4 space-y-2">
-            {[
-              'No password required',
-              'Uses your existing GitHub account',
-              'We only read your profile and email',
-            ].map((t) => (
-              <div key={t} className="flex items-center gap-2 text-sm text-gray-400">
-                <div className="h-1.5 w-1.5 rounded-full bg-brand shrink-0" />
-                {t}
-              </div>
-            ))}
-          </div>
-
-          <p className="text-center mt-8">
-            <Link to="/" className="text-sm text-brand hover:text-brand-light transition-colors">
+          <p className="text-center mt-6">
+            <Link to="/" className="text-xs text-brand hover:text-brand-light transition-colors">
               ← Back to home
             </Link>
           </p>

@@ -93,12 +93,9 @@ async function bootstrap(): Promise<void> {
   })
 
   // ── Routes ─────────────────────────────────────────────
-  // Auth routes mounted at /auth:
-  //   GET  /auth/github           → redirect to GitHub
-  //   GET  /auth/github/callback  → OAuth callback
-  //   GET  /auth/me               → current user
-  //   POST /auth/logout           → clear cookie
+  // Auth routes mounted at /auth and /api/auth
   app.use('/auth', authRoutes)
+  app.use('/api/auth', authRoutes)
 
   // Room + code + version routes: /api/rooms/...
   app.use('/api/rooms', roomsRoutes)

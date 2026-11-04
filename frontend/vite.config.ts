@@ -27,6 +27,18 @@ export default defineConfig({
         target: 'http://localhost:4000',
         changeOrigin: true,
       },
+      '/auth/login': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/auth/register': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/auth/guest': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
       '/auth/me': {
         target: 'http://localhost:4000',
         changeOrigin: true,

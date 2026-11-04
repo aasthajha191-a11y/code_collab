@@ -24,6 +24,9 @@ interface AuthContextValue {
   user: User | null
   isLoading: boolean          // true while we check session on page load
   isAuthenticated: boolean
+  login: (data: { email: string; password: string }) => Promise<void>
+  register: (data: { name: string; email: string; password: string }) => Promise<void>
+  guestLogin: () => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -63,6 +66,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshUser().finally(() => setIsLoading(false))
   }, [refreshUser])
 
+  // Log in with email/password
+  const login = useCallback(async (data: { email: string; password: string }) => {
+    const res = await authApi.login(data)
+    setUser(res.user)
+  }, [])
+
+  // Register with email/password
+  const register = useCallback(async (data: { name: string; email: string; password: string }) => {
+    const res = await authApi.register(data)
+    setUser(res.user)
+  }, [])
+
+  // Quick guest login
+  const guestLogin = useCallback(async () => {
+    const res = await authApi.guestLogin()
+    setUser(res.user)
+  }, [])
+
   // Call backend logout endpoint then clear local state
   const logout = useCallback(async () => {
     try {
@@ -78,6 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         isAuthenticated: user !== null,
+        login,
+        register,
+        guestLogin,
         logout,
         refreshUser,
       }}

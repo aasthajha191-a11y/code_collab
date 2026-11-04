@@ -36,6 +36,24 @@ api.interceptors.response.use(
 // Auth API
 // -------------------------------------------------------
 export const authApi = {
+  /** Register a new user */
+  register: async (data: { name: string; email: string; password: string }) => {
+    const res = await api.post('/auth/register', data)
+    return res.data
+  },
+
+  /** Login user with email and password */
+  login: async (data: { email: string; password: string }) => {
+    const res = await api.post('/auth/login', data)
+    return res.data
+  },
+
+  /** Quick guest/demo login */
+  guestLogin: async () => {
+    const res = await api.post('/auth/guest')
+    return res.data
+  },
+
   /** Get the currently logged-in user (checks session) */
   me: async () => {
     const res = await api.get('/auth/me')

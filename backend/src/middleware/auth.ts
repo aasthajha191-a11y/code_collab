@@ -20,7 +20,7 @@ export interface AuthUser {
   name: string
   email: string | null
   avatarUrl: string | null
-  githubId: string
+  githubId: string | null
 }
 
 // Extend Express Request type to include `user`
@@ -51,8 +51,11 @@ export const authenticate: RequestHandler = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Read token from HttpOnly cookie
-    const token = req.cookies?.token as string | undefined
+    // Read token from HttpOnly cookie or Authorization header (Bearer token)
+    let token = req.cookies?.token as string | undefined
+    if (!token && req.headers.authorization?.startsWith('Bearer ')) {
+      token = req.headers.authorization.substring(7).trim()
+    }
 
     if (!token) {
       res.status(401).json({ error: 'Not authenticated' })

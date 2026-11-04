@@ -22,7 +22,7 @@ if (fs.existsSync(localEnv)) {
  * This prevents silent failures in production.
  */
 
-function require(key: string, fallback?: string): string {
+function requireEnv(key: string, fallback?: string): string {
   const value = process.env[key] ?? fallback
   if (!value) {
     throw new Error(
@@ -48,13 +48,13 @@ export const env = {
   FRONTEND_URL: optional('FRONTEND_URL', 'http://localhost:5173'),
 
   // Database
-  DATABASE_URL: require('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/collab_editor'),
+  DATABASE_URL: requireEnv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/collab_editor'),
 
   // Redis
   REDIS_URL: optional('REDIS_URL', 'redis://localhost:6379'),
 
   // JWT
-  JWT_SECRET:     require('JWT_SECRET', 'dev-secret-change-in-production-must-be-long'),
+  JWT_SECRET:     requireEnv('JWT_SECRET', 'dev-secret-change-in-production-must-be-long'),
   JWT_EXPIRES_IN: optional('JWT_EXPIRES_IN', '7d'),
 
   // GitHub OAuth
@@ -68,7 +68,7 @@ export const env = {
   JUDGE0_API_HOST: optional('JUDGE0_API_HOST', 'judge0-ce.p.rapidapi.com'),
 
   // Cookie
-  COOKIE_SECRET: require('COOKIE_SECRET', 'dev-cookie-secret-change-in-production'),
+  COOKIE_SECRET: requireEnv('COOKIE_SECRET', 'dev-cookie-secret-change-in-production'),
   COOKIE_SECURE: process.env.COOKIE_SECURE === 'true',
 
   // CORS

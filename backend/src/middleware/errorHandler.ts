@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express'
+import { Request, Response, NextFunction, RequestHandler } from 'express'
 import { ZodError } from 'zod'
 
 /**
@@ -19,6 +19,15 @@ export function createError(message: string, statusCode = 500): AppError {
   err.statusCode = statusCode
   err.isOperational = true
   return err
+}
+
+/** Wrapper for async route handlers to forward uncaught errors to error middleware */
+export function asyncHandler(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown> | unknown
+): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next)
+  }
 }
 
 /** Express 404 handler — call this for any route not matched */

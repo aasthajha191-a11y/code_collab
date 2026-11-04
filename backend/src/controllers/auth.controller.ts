@@ -1,26 +1,157 @@
 import { Request, Response } from 'express'
 import axios from 'axios'
+import bcrypt from 'bcryptjs'
+import { z } from 'zod'
 import { prisma } from '../database/prisma'
 import { env } from '../config/env'
 import { generateToken, setAuthCookie, clearAuthCookie } from '../middleware/auth'
+import { createError } from '../middleware/errorHandler'
 
 /**
- * auth.controller.ts — Handles GitHub OAuth 2.0 flow.
- *
- * Flow:
- * 1. GET /auth/github         → redirect to GitHub
- * 2. GET /auth/github/callback → GitHub sends back a `code`
- * 3. We exchange the `code` for an access token
- * 4. We use the token to get the user's GitHub profile
- * 5. We create/update the user in our DB
- * 6. We issue our own JWT stored in an HttpOnly cookie
- * 7. We redirect the browser to the frontend callback page
+ * auth.controller.ts — Authentication controller.
+ * Supports:
+ * 1. Email/Password Registration (with bcrypt hashing)
+ * 2. Email/Password Login
+ * 3. Guest / Demo Login (instant testing)
+ * 4. GitHub OAuth 2.0 flow
+ * 5. Current user retrieval (getMe)
+ * 6. Logout
  */
 
-/** Step 1: Redirect user to GitHub authorization page */
+// ── Validation schemas ──────────────────────────────────
+export const registerSchema = z.object({
+  name:     z.string().min(1, 'Name is required').max(100).trim(),
+  email:    z.string().email('Valid email is required').toLowerCase().trim(),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+})
+
+export const loginSchema = z.object({
+  email:    z.string().email('Valid email is required').toLowerCase().trim(),
+  password: z.string().min(1, 'Password is required'),
+})
+
+// ── Register with email/password ────────────────────────
+export async function register(req: Request, res: Response): Promise<void> {
+  const { name, email, password } = req.body as z.infer<typeof registerSchema>
+
+  // Check if email already in use
+  const existing = await prisma.user.findUnique({
+    where: { email },
+  })
+  if (existing) {
+    throw createError('Email is already registered. Please log in.', 409)
+  }
+
+  // Hash password with bcrypt
+  const saltRounds = 10
+  const hashedPassword = await bcrypt.hash(password, saltRounds)
+
+  // Generate an avatar placeholder if none provided
+  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`
+
+  // Create user
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      avatarUrl,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      avatarUrl: true,
+      githubId: true,
+      createdAt: true,
+    },
+  })
+
+  // Issue JWT and set cookie
+  const token = generateToken(user.id)
+  setAuthCookie(res, token)
+
+  res.status(201).json({
+    message: 'User registered successfully',
+    token,
+    user,
+  })
+}
+
+// ── Login with email/password ───────────────────────────
+export async function login(req: Request, res: Response): Promise<void> {
+  const { email, password } = req.body as z.infer<typeof loginSchema>
+
+  // Find user by email
+  const user = await prisma.user.findUnique({
+    where: { email },
+  })
+
+  if (!user || !user.password) {
+    throw createError('Invalid email or password.', 401)
+  }
+
+  // Verify password with bcrypt
+  const isMatch = await bcrypt.compare(password, user.password)
+  if (!isMatch) {
+    throw createError('Invalid email or password.', 401)
+  }
+
+  // Issue JWT and set cookie
+  const token = generateToken(user.id)
+  setAuthCookie(res, token)
+
+  res.json({
+    message: 'Login successful',
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      githubId: user.githubId,
+    },
+  })
+}
+
+// ── Demo / Guest Login (for immediate interactive testing)
+export async function guestLogin(_req: Request, res: Response): Promise<void> {
+  const guestEmail = 'guest.developer@codecollab.dev'
+  let user = await prisma.user.findUnique({
+    where: { email: guestEmail },
+  })
+
+  if (!user) {
+    const defaultPassword = await bcrypt.hash('GuestDemoPass123!', 10)
+    user = await prisma.user.create({
+      data: {
+        name: 'Demo Developer',
+        email: guestEmail,
+        password: defaultPassword,
+        avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=DemoDeveloper',
+      },
+    })
+  }
+
+  const token = generateToken(user.id)
+  setAuthCookie(res, token)
+
+  res.json({
+    message: 'Guest session started',
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      githubId: user.githubId,
+    },
+  })
+}
+
+// ── GitHub OAuth: Step 1 Redirect ───────────────────────
 export function githubLogin(req: Request, res: Response): void {
   if (!env.GITHUB_CLIENT_ID) {
-    // No credentials configured — show helpful dev message
     res.status(503).json({
       error: 'GitHub OAuth is not configured.',
       instructions: [
@@ -41,7 +172,7 @@ export function githubLogin(req: Request, res: Response): void {
   res.redirect(`https://github.com/login/oauth/authorize?${params}`)
 }
 
-/** Step 2–6: Handle GitHub's redirect back to our server */
+// ── GitHub OAuth: Step 2 Callback ───────────────────────
 export async function githubCallback(req: Request, res: Response): Promise<void> {
   const code = req.query.code as string | undefined
 
@@ -51,7 +182,6 @@ export async function githubCallback(req: Request, res: Response): Promise<void>
   }
 
   try {
-    // Exchange the authorization code for an access token
     const tokenRes = await axios.post<{ access_token: string; error?: string }>(
       'https://github.com/login/oauth/access_token',
       {
@@ -70,7 +200,6 @@ export async function githubCallback(req: Request, res: Response): Promise<void>
       return
     }
 
-    // Use the access token to fetch the GitHub user profile
     const [profileRes, emailsRes] = await Promise.all([
       axios.get<GithubProfile>('https://api.github.com/user', {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -83,13 +212,11 @@ export async function githubCallback(req: Request, res: Response): Promise<void>
     const profile = profileRes.data
     const emails  = emailsRes.data
 
-    // Find the primary verified email
     const primaryEmail =
       emails.find((e) => e.primary && e.verified)?.email ??
       emails.find((e) => e.verified)?.email ??
       null
 
-    // Upsert: create user if they don't exist; update if they do
     const user = await prisma.user.upsert({
       where: { githubId: String(profile.id) },
       update: {
@@ -105,11 +232,9 @@ export async function githubCallback(req: Request, res: Response): Promise<void>
       },
     })
 
-    // Issue our own JWT (we don't store the GitHub token)
     const jwt = generateToken(user.id)
     setAuthCookie(res, jwt)
 
-    // Redirect to frontend — the AuthCallback page handles the rest
     res.redirect(`${env.FRONTEND_URL}/auth/callback?status=success`)
   } catch (err) {
     console.error('[Auth] GitHub callback error:', err)
@@ -117,12 +242,12 @@ export async function githubCallback(req: Request, res: Response): Promise<void>
   }
 }
 
-/** GET /api/auth/me — return the currently authenticated user */
+// ── GET /auth/me ────────────────────────────────────────
 export function getMe(req: Request, res: Response): void {
   res.json(req.authUser)
 }
 
-/** POST /api/auth/logout — clear the session cookie */
+// ── POST /auth/logout ───────────────────────────────────
 export function logout(req: Request, res: Response): void {
   clearAuthCookie(res)
   res.json({ message: 'Logged out successfully' })

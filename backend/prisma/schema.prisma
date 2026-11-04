@@ -13,13 +13,14 @@ datasource db {
 
 // ─────────────────────────────────────────────
 // USER
-// Stores everyone who has logged in via GitHub OAuth.
+// Stores registered users (email/password) and OAuth users (GitHub).
 // ─────────────────────────────────────────────
 model User {
   id        String   @id @default(cuid())
   name      String
   email     String?  @unique
-  githubId  String   @unique  // GitHub's numeric user ID (stored as string)
+  password  String?  // Hashed with bcrypt
+  githubId  String?  @unique  // GitHub's numeric user ID (stored as string)
   avatarUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -30,6 +31,7 @@ model User {
   snapshots     CodeSnapshot[]
 
   @@index([githubId])
+  @@index([email])
   @@map("users")
 }
 
