@@ -53,4 +53,3 @@ databases:
   - name: codecollab-db
     plan: free
     databaseName: collab_editor
-    user: postgres
