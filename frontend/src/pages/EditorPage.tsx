@@ -13,6 +13,7 @@ import { Spinner, FullPageSpinner } from '@/components/Spinner'
 import { Avatar, AvatarGroup } from '@/components/Avatar'
 import { LanguageSelector, Language } from '@/components/LanguageSelector'
 import { Modal } from '@/components/Modal'
+import { CodeEditor, OnlineCollaborator } from '@/components/CodeEditor'
 import { codeApi, versionsApi } from '@/services/api'
 
 // ── Types ──────────────────────────────────────────────────
@@ -72,7 +73,7 @@ export default function EditorPage() {
   const [versionsLoading, setVersionsLoading] = useState(false)
 
   // ── Online users (populated by Socket.IO in Phase 4) ──
-  const [onlineUsers] = useState<OnlineUser[]>([])
+  const [onlineUsers, setOnlineUsers] = useState<OnlineCollaborator[]>([])
 
   // ── Copy invite link ───────────────────────────────────
   const [copied, setCopied] = useState(false)
@@ -314,12 +315,20 @@ export default function EditorPage() {
 
           {/* Monaco Editor area */}
           <div className={`flex-1 overflow-hidden relative ${outputMax ? 'hidden' : ''}`}>
-            {/* Phase 4 replaces this placeholder with the real Monaco + Yjs editor */}
-            <MonacoPlaceholder
-              code={code}
-              language={language}
-              onChange={setCode}
-            />
+            {roomId && (
+              <CodeEditor
+                roomId={roomId}
+                language={language}
+                initialCode={room?.currentCode || DEFAULT_CODE[language]}
+                currentUser={{
+                  id: user?.id ?? 'guest',
+                  name: user?.name ?? 'Guest Developer',
+                  avatarUrl: user?.avatarUrl ?? null,
+                }}
+                onCodeChange={setCode}
+                onOnlineUsersChange={setOnlineUsers}
+              />
+            )}
           </div>
 
           {/* ── OUTPUT PANEL ──────────────────────────── */}
@@ -473,43 +482,6 @@ export default function EditorPage() {
           </div>
         </div>
       </Modal>
-    </div>
-  )
-}
-
-// ── Monaco Placeholder ─────────────────────────────────────
-// This gets replaced with the real Monaco + Yjs editor in Phase 4.
-// For now it's a styled textarea that works identically for testing.
-function MonacoPlaceholder({
-  code, language, onChange
-}: {
-  code: string
-  language: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div className="h-full flex flex-col bg-editor-bg">
-      {/* Tab bar */}
-      <div className="flex items-center border-b border-editor-border bg-editor-sidebar px-2 gap-1">
-        <div className="flex items-center gap-1.5 px-3 py-2 border-b-2 border-brand bg-editor-bg text-xs text-white">
-          <Code2 className="h-3 w-3 text-brand" />
-          {language === 'python' ? 'main.py' : language === 'javascript' ? 'main.js' : 'Main.java'}
-        </div>
-        <div className="ml-auto px-3 py-1.5 text-xs text-gray-600 italic">
-          Phase 4: Monaco Editor + live cursors
-        </div>
-      </div>
-
-      {/* Editable area */}
-      <textarea
-        value={code}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-        className="flex-1 w-full bg-editor-bg text-gray-200 font-mono text-sm
-                   resize-none outline-none p-5 leading-7 tab-size-2"
-        style={{ tabSize: 2 }}
-        placeholder="Write your code here..."
-      />
     </div>
   )
 }

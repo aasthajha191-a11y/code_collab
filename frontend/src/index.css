@@ -86,3 +86,26 @@
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
   }
 }
+
+/* ----------------------------------------------------------------
+   Remote cursor and selection styles for y-monaco
+   ---------------------------------------------------------------- */
+.yRemoteSelection {
+  background-color: rgba(99, 102, 241, 0.25);
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: 2px solid #6366f1;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: ' ';
+  border: 3px solid #6366f1;
+  border-radius: 4px;
+  left: -4px;
+  top: -4px;
+}

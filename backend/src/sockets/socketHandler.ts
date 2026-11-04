@@ -7,7 +7,7 @@ import {
   applyUpdate,
   getStateAsUpdate,
   getDiffUpdate,
-  getStateVector,
+  deleteDoc,
 } from '../collaboration/docManager'
 
 /**
@@ -19,14 +19,16 @@ import {
  *    join-room          user wants to join a room
  *    sync-step1         client sends its state vector; server replies with missing updates
  *    sync-update        client sends a Yjs document update (keystroke, edit, etc.)
- *    awareness-update   client sends cursor position / presence data
+ *    awareness-update   client sends cursor position / presence data (binary or json)
  *    leave-room         user explicitly leaves
  *
  *  Server → Client:
+ *    sync-full-state    server sends the full Yjs document state as binary update
  *    sync-step2         server sends the updates the client is missing
  *    sync-update        broadcast a Yjs update to all other room members
  *    awareness-update   broadcast cursor/presence to other room members
  *    room-users         current list of online users in the room
+ *    user-left          user left room
  *    error              something went wrong
  */
 
@@ -41,18 +43,22 @@ interface AwarenessState {
   cursor: unknown  // Yjs awareness can carry any JSON-serialisable data
 }
 
-// Track which users are in which rooms: roomId → Set of socket IDs
+// Track which users are in which rooms: roomId → Map of socketId → AwarenessState
 const roomUsers = new Map<string, Map<string, AwarenessState>>()
 
 export function registerSocketHandlers(io: SocketIOServer): void {
 
   // ── Authentication middleware for Socket.IO ──────────────
   // Runs before every connection is established.
-  // Reads the JWT from the cookie header and attaches the user to the socket.
+  // Reads the JWT from cookie, auth payload, or Authorization header.
   io.use(async (socket, next) => {
     try {
       const cookieHeader = socket.handshake.headers.cookie ?? ''
-      const token = parseCookieToken(cookieHeader)
+      const cookieToken = parseCookieToken(cookieHeader)
+      const authToken = socket.handshake.auth?.token as string | undefined
+      const headerToken = socket.handshake.headers.authorization?.replace(/^Bearer\s+/i, '')
+
+      const token = cookieToken || authToken || headerToken
 
       if (!token) {
         return next(new Error('Not authenticated'))
@@ -70,12 +76,14 @@ export function registerSocketHandlers(io: SocketIOServer): void {
         select: { id: true, name: true, avatarUrl: true },
       })
 
-      if (!user) { return next(new Error('User not found')) }
+      if (!user) {
+        return next(new Error('User not found'))
+      }
 
       // Attach user to socket for use in handlers below
-      (socket as SocketWithUser).user = user
+      ;(socket as SocketWithUser).user = user
       next()
-    } catch (err) {
+    } catch {
       next(new Error('Authentication error'))
     }
   })
@@ -96,6 +104,15 @@ export function registerSocketHandlers(io: SocketIOServer): void {
           socket.emit('error', { message: 'You are not a member of this room' })
           return
         }
+
+        // Fetch room to initialize code document if needed
+        const room = await prisma.room.findUnique({
+          where: { id: roomId },
+          select: { currentCode: true },
+        })
+
+        // Initialize server Y.Doc with saved currentCode if doc is newly created
+        getOrCreateDoc(roomId, room?.currentCode ?? '')
 
         // Join the Socket.IO room (isolated namespace for broadcasts)
         socket.join(roomId)
@@ -161,21 +178,24 @@ export function registerSocketHandlers(io: SocketIOServer): void {
     })
 
     // ── AWARENESS UPDATE — cursor position and user presence ──
-    // Awareness is separate from document content.
-    // It carries ephemeral data: cursor position, selection, user colour.
-    socket.on('awareness-update', (data: { roomId: string; state: AwarenessState }) => {
+    // Awareness carries ephemeral data: cursor position, selection, user name & color.
+    // Can receive either binary update or state object.
+    socket.on('awareness-update', (data: { roomId: string; update?: number[]; state?: AwarenessState }) => {
       try {
-        const { roomId, state } = data
+        const { roomId, update, state } = data
 
-        // Update local tracking
-        const users = roomUsers.get(roomId)
-        if (users?.has(socket.id)) {
-          users.set(socket.id, state)
+        if (state) {
+          // Update local tracking
+          const users = roomUsers.get(roomId)
+          if (users?.has(socket.id)) {
+            users.set(socket.id, state)
+          }
         }
 
-        // Broadcast to others — include socket.id so receiver can map to user
+        // Broadcast to others — include socketId
         socket.to(roomId).emit('awareness-update', {
           socketId: socket.id,
+          update,
           state,
         })
       } catch (err) {

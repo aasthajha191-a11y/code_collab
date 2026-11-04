@@ -13,6 +13,7 @@ import { env } from './config/env'
 import { pubClient, subClient, connectRedis } from './config/redis'
 import { prisma } from './database/prisma'
 import { registerSocketHandlers } from './sockets/socketHandler'
+import { getActiveRoomIds, getDocContent } from './collaboration/docManager'
 import { notFound, errorHandler } from './middleware/errorHandler'
 
 import authRoutes  from './routes/auth.routes'
@@ -130,6 +131,24 @@ async function bootstrap(): Promise<void> {
 
   // Register all Socket.IO event handlers
   registerSocketHandlers(io)
+
+  // ── Periodic auto-save: persist in-memory Y.Doc code to PostgreSQL ──
+  const autoSaveInterval = setInterval(async () => {
+    const roomIds = getActiveRoomIds()
+    for (const roomId of roomIds) {
+      try {
+        const currentCode = getDocContent(roomId)
+        if (currentCode !== undefined) {
+          await prisma.room.update({
+            where: { id: roomId },
+            data: { currentCode, updatedAt: new Date() },
+          })
+        }
+      } catch {
+        // Room may have been deleted or database busy
+      }
+    }
+  }, env.SNAPSHOT_INTERVAL_MS)
 
   // ── Start listening ────────────────────────────────────
   httpServer.listen(env.PORT, () => {

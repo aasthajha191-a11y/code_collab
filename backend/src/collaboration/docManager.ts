@@ -18,12 +18,23 @@ const docs = new Map<string, Y.Doc>()
 /**
  * Get or create the Y.Doc for a room.
  * Called when any user connects to a room.
+ * If initialCode is provided and doc is newly created or empty, sets it on yText.
  */
-export function getOrCreateDoc(roomId: string): Y.Doc {
+export function getOrCreateDoc(roomId: string, initialCode?: string): Y.Doc {
   if (!docs.has(roomId)) {
     const doc = new Y.Doc()
+    if (initialCode) {
+      const yText = doc.getText('monaco')
+      yText.insert(0, initialCode)
+    }
     docs.set(roomId, doc)
     console.log(`[DocManager] Created new Y.Doc for room: ${roomId}`)
+  } else if (initialCode) {
+    const doc = docs.get(roomId)!
+    const yText = doc.getText('monaco')
+    if (yText.length === 0) {
+      yText.insert(0, initialCode)
+    }
   }
   return docs.get(roomId)!
 }
@@ -33,6 +44,26 @@ export function getOrCreateDoc(roomId: string): Y.Doc {
  */
 export function getDoc(roomId: string): Y.Doc | undefined {
   return docs.get(roomId)
+}
+
+/**
+ * Read the current plain text string from the room's Y.Text('monaco').
+ */
+export function getDocContent(roomId: string): string {
+  const doc = docs.get(roomId)
+  return doc ? doc.getText('monaco').toString() : ''
+}
+
+/**
+ * Update the text content of a room doc (e.g. on snapshot restore).
+ */
+export function setDocContent(roomId: string, newContent: string): void {
+  const doc = getOrCreateDoc(roomId)
+  const yText = doc.getText('monaco')
+  doc.transact(() => {
+    yText.delete(0, yText.length)
+    yText.insert(0, newContent)
+  })
 }
 
 /**
@@ -73,7 +104,7 @@ export function getDiffUpdate(roomId: string, clientStateVector: Uint8Array): Ui
 
 /**
  * Delete a room's document from memory.
- * Called when a room is deleted or the last user leaves.
+ * Called when a room is deleted.
  */
 export function deleteDoc(roomId: string): void {
   const doc = docs.get(roomId)
@@ -82,6 +113,11 @@ export function deleteDoc(roomId: string): void {
     docs.delete(roomId)
     console.log(`[DocManager] Destroyed Y.Doc for room: ${roomId}`)
   }
+}
+
+/** Return list of all active room IDs currently held in memory */
+export function getActiveRoomIds(): string[] {
+  return Array.from(docs.keys())
 }
 
 /** How many documents are currently in memory (for monitoring) */
